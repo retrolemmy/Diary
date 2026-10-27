@@ -54,3 +54,7 @@ and regenerate with:
 ```sh
 python3 tools/make_icons.py > icons.r
 ```
+
+## License
+
+MIT; see [LICENSE](LICENSE).
