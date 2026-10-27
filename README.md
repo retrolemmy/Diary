@@ -57,4 +57,5 @@ python3 tools/make_icons.py > icons.r
 
 ## License
 
-MIT; see [LICENSE](LICENSE).
+No rights reserved: Diary is dedicated to the public domain under
+[CC0 1.0](LICENSE). Use it for anything, no attribution needed.
