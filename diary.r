@@ -78,7 +78,7 @@ resource 'DITL' (128) {
         Button { enabled, "OK" };
 
         { 15, 62, 33, 300 },
-        StaticText { disabled, "Diary 1.1" };
+        StaticText { disabled, "Diary 1.2" };
 
         { 38, 62, 92, 300 },
         StaticText { disabled, "A simple day-by-day journal for the classic Mac OS. Entries are kept in the \"Diary Entries\" folder." };
@@ -151,7 +151,7 @@ resource 'DITL' (130) {
 type 'DIAR' as 'STR ';
 
 resource 'DIAR' (0, "Owner resource") {
-    "Diary 1.1"
+    "Diary 1.2"
 };
 
 resource 'FREF' (128) {

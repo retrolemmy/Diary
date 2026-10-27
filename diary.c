@@ -64,6 +64,17 @@ enum {
     kSecondsPerDay = 86400L
 };
 
+/* Month calendar at the top of the left column, above the entry list */
+enum {
+    kCalTop = kHeaderHeight,
+    kCalLeft = 6,
+    kCalCellWidth = 21,
+    kCalCellHeight = 14,
+    kCalGridTop = kCalTop + 34,
+    kCalBottom = kCalGridTop + 6 * kCalCellHeight + 3,     /* separator line */
+    kListTop = kCalBottom + 1
+};
+
 static WindowPtr gWindow;
 static TEHandle gTE;
 static ListHandle gList;
@@ -81,6 +92,10 @@ static Handle gAllDays, gShownDays;
 static short gAllCount, gShownCount;
 static Str255 gSearch;
 
+/* The month the calendar shows; follows gDay, but the arrows can move it. */
+static long gCalYear;
+static short gCalMonth;
+
 static const char *kWeekdays[] = {
     "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
 };
@@ -92,6 +107,7 @@ static const char *kMonths[] = {
 static void AdjustScrollBar(void);
 static void RefreshList(void);
 static void SyncListSelection(void);
+static void ShowMonthOf(long day);
 
 /* ---------- Pascal string helpers ---------- */
 
@@ -502,6 +518,7 @@ static void LoadEntry(void)
     }
     TESetSelect(32767, 32767, gTE);
     gDirty = false;
+    ShowMonthOf(gDay);
 
     SetPort(gWindow);
     InvalRect(&gWindow->portRect);
@@ -858,21 +875,201 @@ static void SyncListSelection(void)
     }
 }
 
+/* Opens a day picked from the list or the calendar. While searching,
+   the first match in it is selected. */
+static void OpenDay(long day)
+{
+    if (day == gDay) {
+        SyncListSelection();
+        return;
+    }
+    GoToDay(day);
+    if (gDay == day && gSearch[0] != 0)
+        SelectMatchFrom(0);
+}
+
 static void DoListClick(Point pt, EventRecord *ev)
 {
     Cell cell;
 
     LClick(pt, ev->modifiers, gList);
     SetPt(&cell, 0, 0);
-    if (LGetSelect(true, &cell, gList) && cell.v < gShownCount) {
-        long day = Days(gShownDays)[cell.v];
-        if (day != gDay) {
-            GoToDay(day);
-            if (gDay == day && gSearch[0] != 0)
-                SelectMatchFrom(0);
-        }
-    } else {
+    if (LGetSelect(true, &cell, gList) && cell.v < gShownCount)
+        OpenDay(Days(gShownDays)[cell.v]);
+    else
         SyncListSelection();
+}
+
+/* ---------- Calendar ---------- */
+
+static void ShowMonthOf(long day)
+{
+    short dayOfMonth;
+
+    DayToDate(day, &gCalYear, &gCalMonth, &dayOfMonth);
+}
+
+static long CalendarFirstDay(void)
+{
+    return DateToDay(gCalYear, gCalMonth, 1);
+}
+
+static short CalendarMonthLength(void)
+{
+    long year = gCalYear;
+    short month = gCalMonth + 1;
+
+    if (month > 12) {
+        month = 1;
+        year++;
+    }
+    return DateToDay(year, month, 1) - CalendarFirstDay();
+}
+
+static void InvalCalendar(void)
+{
+    Rect r;
+
+    SetPort(gWindow);
+    SetRect(&r, 0, kCalTop, kListWidth, kCalBottom);
+    InvalRect(&r);
+}
+
+/* direction is -1 for the previous-month arrow, 1 for the next-month one. */
+static void GetCalendarArrow(short direction, Rect *r)
+{
+    short left = direction < 0 ? kCalLeft : kListWidth - kCalLeft - 12;
+
+    SetRect(r, left, kCalTop + 5, left + 12, kCalTop + 17);
+}
+
+/* Cells are numbered 0..41, row by row, starting on a Sunday. */
+static void GetCalendarCell(short index, Rect *r)
+{
+    short top = kCalGridTop + (index / 7) * kCalCellHeight;
+    short left = kCalLeft + (index % 7) * kCalCellWidth;
+
+    SetRect(r, left, top, left + kCalCellWidth, top + kCalCellHeight);
+}
+
+static void DrawCalendarArrow(short direction)
+{
+    Rect r;
+    short i, x, y;
+
+    GetCalendarArrow(direction, &r);
+    y = (r.top + r.bottom) / 2;
+    for (i = 0; i < 6; i++) {
+        x = direction < 0 ? r.left + 3 + i : r.right - 4 - i;
+        MoveTo(x, y - i);
+        LineTo(x, y + i);
+    }
+}
+
+static void DrawCalendar(void)
+{
+    static const char kInitials[] = "SMTWTFS";
+    Str255 s;
+    Rect r;
+    long first = CalendarFirstDay(), today = Today();
+    short start = Weekday(first), length = CalendarMonthLength(), i;
+
+    TextFont(systemFont);
+    TextSize(0);
+    PSet(s, kMonths[gCalMonth - 1]);
+    PAppend(s, " ");
+    PAppendNum(s, gCalYear, 4);
+    MoveTo((kListWidth - StringWidth(s)) / 2, kCalTop + 15);
+    DrawString(s);
+    DrawCalendarArrow(-1);
+    DrawCalendarArrow(1);
+
+    TextFont(applFont);
+    TextSize(9);
+    for (i = 0; i < 7; i++) {
+        MoveTo(kCalLeft + i * kCalCellWidth + (kCalCellWidth - CharWidth(kInitials[i])) / 2,
+               kCalGridTop - 4);
+        DrawChar(kInitials[i]);
+    }
+
+    /* Days with a (listed) entry are bold, today is framed and the open
+       day is highlighted. */
+    for (i = 0; i < length; i++) {
+        long day = first + i;
+
+        GetCalendarCell(start + i, &r);
+        s[0] = 0;
+        PAppendNum(s, i + 1, 1);
+        TextFace(FindDay(gShownDays, gShownCount, day) >= 0 ? bold : normal);
+        MoveTo(r.left + (kCalCellWidth - StringWidth(s)) / 2, r.top + 11);
+        DrawString(s);
+        if (day == today)
+            FrameRect(&r);
+        if (day == gDay)
+            InvertRect(&r);
+    }
+    TextFace(normal);
+
+    MoveTo(0, kCalBottom);
+    LineTo(kListWidth, kCalBottom);
+
+    TextFont(applFont);
+    TextSize(12);
+}
+
+static void ChangeCalendarMonth(short delta)
+{
+    gCalMonth += delta;
+    if (gCalMonth < 1) {
+        gCalMonth = 12;
+        gCalYear--;
+    } else if (gCalMonth > 12) {
+        gCalMonth = 1;
+        gCalYear++;
+    }
+    InvalCalendar();
+}
+
+/* Highlights r while the mouse is held down inside it, like a button. */
+static Boolean TrackRect(const Rect *r)
+{
+    Boolean inside = true;
+    Point pt;
+
+    InvertRect(r);
+    while (StillDown()) {
+        GetMouse(&pt);
+        if (PtInRect(pt, r) != inside) {
+            inside = !inside;
+            InvertRect(r);
+        }
+    }
+    if (inside)
+        InvertRect(r);
+    return inside;
+}
+
+static void DoCalendarClick(Point pt)
+{
+    Rect r;
+    long first = CalendarFirstDay();
+    short start = Weekday(first), length = CalendarMonthLength(), i;
+
+    for (i = -1; i <= 1; i += 2) {
+        GetCalendarArrow(i, &r);
+        InsetRect(&r, -3, -3);
+        if (PtInRect(pt, &r)) {
+            if (TrackRect(&r))
+                ChangeCalendarMonth(i);
+            return;
+        }
+    }
+    for (i = 0; i < length; i++) {
+        GetCalendarCell(start + i, &r);
+        if (PtInRect(pt, &r)) {
+            OpenDay(first + i);
+            return;
+        }
     }
 }
 
@@ -883,7 +1080,7 @@ static void LayoutWindow(void)
     Rect port = gWindow->portRect;
     Rect view;
 
-    LSize(kListWidth - kScrollWidth + 1, port.bottom - kHeaderHeight, gList);
+    LSize(kListWidth - kScrollWidth + 1, port.bottom - kListTop, gList);
 
     MoveControl(gScroll, port.right - kScrollWidth + 1, kHeaderHeight - 1);
     SizeControl(gScroll, kScrollWidth, port.bottom - kHeaderHeight - kScrollWidth + 3);
@@ -940,7 +1137,7 @@ static void CreateWindow(void)
     TextFont(applFont);
     TextSize(12);
 
-    SetRect(&r, 0, kHeaderHeight, kListWidth - kScrollWidth + 1, 100);
+    SetRect(&r, 0, kListTop, kListWidth - kScrollWidth + 1, kListTop + 100);
     SetRect(&bounds, 0, 0, 1, 0);
     SetPt(&cellSize, 0, 0);
     gList = LNew(&r, &bounds, cellSize, 0, gWindow, true, false, false, true);
@@ -1006,6 +1203,7 @@ static void DoUpdate(WindowPtr w)
     BeginUpdate(w);
     EraseRect(&w->portRect);
     DrawHeader();
+    DrawCalendar();
     DrawControls(w);
     DrawGrowBox();
     LUpdate(w->visRgn, gList);
@@ -1032,7 +1230,7 @@ static void DoGrow(Point where)
     Rect limits;
     long size;
 
-    SetRect(&limits, 480, 160, 32767, 32767);
+    SetRect(&limits, 480, kListTop + 60, 32767, 32767);
     size = GrowWindow(gWindow, where, &limits);
     if (size == 0)
         return;
@@ -1052,6 +1250,10 @@ static void DoContentClick(EventRecord *ev)
     SetPort(gWindow);
     GlobalToLocal(&pt);
 
+    if (pt.h < kListWidth && pt.v >= kCalTop && pt.v < kCalBottom) {
+        DoCalendarClick(pt);
+        return;
+    }
     GetListArea(&listArea);
     if (PtInRect(pt, &listArea)) {
         DoListClick(pt, ev);

@@ -3,8 +3,11 @@
 A simple one-page-per-day journal for the classic Mac OS on 68k Macs
 (System 7; should also run on System 6.0.8 with HFS).
 
-- One window: a list of all entries on the left (newest first), the selected
-  day on the right with `<`, `Today` and `>` buttons. Click an entry to open it
+- One window: a month calendar and a list of all entries (newest first) on
+  the left, the selected day on the right with `<`, `Today` and `>` buttons
+- In the calendar, days with an entry are **bold**, today is framed and the
+  open day is highlighted; the arrows switch months. Click a day (or a list
+  entry) to open it
 - **Find** (⌘F) searches every entry (ignoring case) and narrows the list to
   the matches; **Find Again** (⌘G) jumps to the next match, across entries;
   **Show All Entries** clears the search
