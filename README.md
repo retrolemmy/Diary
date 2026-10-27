@@ -12,6 +12,8 @@ A simple one-page-per-day journal for the classic Mac OS on 68k Macs
   the matches; **Find Again** (⌘G) jumps to the next match, across entries;
   **Show All Entries** clears the search
 - **Go** menu: Previous Day (⌘[), Next Day (⌘]), Today (⌘T)
+- **Font** and **Size** menus set the entry text's font and size (9–24 point);
+  the choice is remembered in a "Diary Settings" file in the entries folder
 - The current entry is saved automatically when you switch days or quit; ⌘S saves at any time
 - Entries are plain `TEXT` files named `YYYY-MM-DD` in a **Diary Entries** folder
   next to the application, so they open in SimpleText/TeachText too

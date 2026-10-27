@@ -29,7 +29,9 @@ enum {
     kMenuApple = 128,
     kMenuFile,
     kMenuEdit,
-    kMenuGo
+    kMenuGo,
+    kMenuFont,
+    kMenuSize
 };
 
 enum { kItemAbout = 1 };
@@ -92,6 +94,12 @@ static Handle gAllDays, gShownDays;
 static short gAllCount, gShownCount;
 static Str255 gSearch;
 
+/* Font and size of the entry text, remembered in the settings file. */
+static short gTextFont = applFont;
+static short gTextSize = 12;
+static const short kSizes[] = { 9, 10, 12, 14, 18, 24 };
+enum { kSizeCount = sizeof(kSizes) / sizeof(kSizes[0]) };
+
 /* The month the calendar shows; follows gDay, but the arrows can move it. */
 static long gCalYear;
 static short gCalMonth;
@@ -141,6 +149,11 @@ static void PSet(Str255 s, const char *c)
 {
     s[0] = 0;
     PAppend(s, c);
+}
+
+static Boolean PEqual(ConstStr255Param a, ConstStr255Param b)
+{
+    return memcmp(a, b, a[0] + 1) == 0;
 }
 
 /* ---------- Date arithmetic ---------- */
@@ -467,10 +480,10 @@ static void ScanEntries(void)
     }
 }
 
-/* Reads a day's entry into buf (resized to fit). Missing files read as empty. */
-static OSErr ReadEntry(long day, Handle buf, long *len)
+/* Reads a file in the entries folder into buf (resized to fit, at most
+   kMaxTextLength bytes). */
+static OSErr ReadEntriesFile(ConstStr255Param name, Handle buf, long *len)
 {
-    Str255 name;
     short refNum;
     OSErr err;
 
@@ -478,7 +491,6 @@ static OSErr ReadEntry(long day, Handle buf, long *len)
     SetHandleSize(buf, 0);
     if (!gHaveFolder)
         return fnfErr;
-    MakeEntryName(day, name);
     err = HOpen(gVRefNum, gEntriesDirID, name, fsRdPerm, &refNum);
     if (err != noErr)
         return err;
@@ -498,6 +510,36 @@ static OSErr ReadEntry(long day, Handle buf, long *len)
     if (err != noErr)
         *len = 0;
     return err;
+}
+
+/* Creates or replaces a file in the entries folder. */
+static OSErr WriteEntriesFile(ConstStr255Param name, OSType creator, OSType type,
+                              Ptr data, long count)
+{
+    short refNum;
+    OSErr err;
+
+    err = HCreate(gVRefNum, gEntriesDirID, name, creator, type);
+    if (err != noErr && err != dupFNErr)
+        return err;
+    err = HOpen(gVRefNum, gEntriesDirID, name, fsWrPerm, &refNum);
+    if (err != noErr)
+        return err;
+    err = FSWrite(refNum, &count, data);
+    if (err == noErr)
+        err = SetEOF(refNum, count);
+    FSClose(refNum);
+    FlushVol(NULL, gVRefNum);
+    return err;
+}
+
+/* Reads a day's entry into buf (resized to fit). Missing files read as empty. */
+static OSErr ReadEntry(long day, Handle buf, long *len)
+{
+    Str255 name;
+
+    MakeEntryName(day, name);
+    return ReadEntriesFile(name, buf, len);
 }
 
 static void LoadEntry(void)
@@ -529,7 +571,6 @@ static void LoadEntry(void)
 static Boolean SaveEntry(void)
 {
     Str255 name;
-    short refNum;
     long count;
     Handle text;
     OSErr err;
@@ -554,25 +595,10 @@ static Boolean SaveEntry(void)
         return true;
     }
 
-    err = HCreate(gVRefNum, gEntriesDirID, name, 'ttxt', 'TEXT');
-    if (err != noErr && err != dupFNErr) {
-        ShowError("Could not create the entry file.", err);
-        return false;
-    }
-    err = HOpen(gVRefNum, gEntriesDirID, name, fsWrPerm, &refNum);
-    if (err != noErr) {
-        ShowError("Could not open the entry file.", err);
-        return false;
-    }
-
     text = (Handle)TEGetText(gTE);
     HLock(text);
-    err = FSWrite(refNum, &count, *text);
+    err = WriteEntriesFile(name, 'ttxt', 'TEXT', *text, count);
     HUnlock(text);
-    if (err == noErr)
-        err = SetEOF(refNum, count);
-    FSClose(refNum);
-    FlushVol(NULL, gVRefNum);
 
     if (err != noErr) {
         ShowError("Could not save the entry.", err);
@@ -1073,6 +1099,115 @@ static void DoCalendarClick(Point pt)
     }
 }
 
+/* ---------- Text font ---------- */
+
+/* The settings file holds the text size (2 bytes) followed by the font
+   name as a Pascal string. The name is stored rather than the font number,
+   which can differ between Macs. */
+static void LoadSettings(void)
+{
+    Handle buf = NewHandle(0);
+    Str255 name, actual;
+    unsigned char *p;
+    short font, size;
+    long len;
+
+    /* Resolve the default application font to its real number, so the
+       Font menu can find it by name. */
+    GetFontName(applFont, name);
+    GetFNum(name, &gTextFont);
+
+    if (buf == NULL)
+        return;
+    PSet(name, "Diary Settings");
+    if (ReadEntriesFile(name, buf, &len) == noErr && len >= 3) {
+        p = (unsigned char *)*buf;
+        size = (p[0] << 8) | p[1];
+        if (len >= 3 + p[2] && size >= 6 && size <= 127) {
+            BlockMove(p + 2, name, p[2] + 1);
+            GetFNum(name, &font);
+            GetFontName(font, actual);
+            if (PEqual(name, actual))       /* the font is still installed */
+                gTextFont = font;
+            gTextSize = size;
+        }
+    }
+    DisposeHandle(buf);
+}
+
+static void SaveSettings(void)
+{
+    unsigned char data[2 + 256];
+    Str255 name, fontName;
+
+    if (!gHaveFolder)
+        return;
+    GetFontName(gTextFont, fontName);
+    data[0] = gTextSize >> 8;
+    data[1] = gTextSize & 0xFF;
+    BlockMove(fontName, data + 2, fontName[0] + 1);
+    PSet(name, "Diary Settings");
+    WriteEntriesFile(name, 'DIAR', 'pref', (Ptr)data, 3 + fontName[0]);
+}
+
+/* Sets the entry text's font and size, and the line metrics that go
+   with them. */
+static void ApplyTextFont(void)
+{
+    FontInfo info;
+    Rect view;
+
+    SetPort(gWindow);
+    TextFont(gTextFont);
+    TextSize(gTextSize);
+    GetFontInfo(&info);
+    TextFont(applFont);     /* back to the list's font */
+    TextSize(12);
+
+    (**gTE).txFont = gTextFont;
+    (**gTE).txSize = gTextSize;
+    (**gTE).fontAscent = info.ascent;
+    (**gTE).lineHeight = info.ascent + info.descent + info.leading;
+    view = (**gTE).viewRect;
+    (**gTE).destRect.top = view.top;
+    (**gTE).destRect.bottom = view.bottom;
+    TECalText(gTE);
+    TESelView(gTE);
+    AdjustScrollBar();
+    InvalRect(&view);
+}
+
+static void SetTextFont(short font, short size)
+{
+    if (font == gTextFont && size == gTextSize)
+        return;
+    gTextFont = font;
+    gTextSize = size;
+    ApplyTextFont();
+    SaveSettings();
+}
+
+/* Checks the current font and size; sizes the font has as a bitmap
+   (which look best) are shown in outline style, as Mac apps do. */
+static void MarkFontMenus(void)
+{
+    MenuHandle menu = GetMenuHandle(kMenuFont);
+    Str255 current, name;
+    short i, count = CountMItems(menu);
+
+    GetFontName(gTextFont, current);
+    for (i = 1; i <= count; i++) {
+        GetMenuItemText(menu, i, name);
+        CheckItem(menu, i, PEqual(name, current));
+    }
+
+    menu = GetMenuHandle(kMenuSize);
+    for (i = 0; i < kSizeCount; i++) {
+        CheckItem(menu, i + 1, kSizes[i] == gTextSize);
+        SetItemStyle(menu, i + 1, RealFont(gTextFont, kSizes[i]) ? outline : normal);
+    }
+}
+
 /* ---------- Window ---------- */
 
 static void LayoutWindow(void)
@@ -1148,6 +1283,7 @@ static void CreateWindow(void)
     TEAutoView(true, gTE);
 
     LayoutWindow();
+    ApplyTextFont();
     RefreshList();
     ShowWindow(gWindow);
 }
@@ -1401,6 +1537,8 @@ static void AdjustMenus(void)
     SetItemEnabled(menu, kItemFind, isOurs);
     SetItemEnabled(menu, kItemFindAgain, isOurs && gSearch[0] != 0);
     SetItemEnabled(menu, kItemShowAll, isOurs && gSearch[0] != 0);
+
+    MarkFontMenus();
 }
 
 static void DoQuit(void)
@@ -1413,6 +1551,7 @@ static void DoMenuCommand(long command)
 {
     short menuID = HiWord(command);
     short item = LoWord(command);
+    short font;
     Str255 name;
 
     switch (menuID) {
@@ -1474,6 +1613,17 @@ static void DoMenuCommand(long command)
                 GoToDay(gDay + 1);
             else if (item == kItemToday)
                 GoToDay(Today());
+            break;
+
+        case kMenuFont:
+            GetMenuItemText(GetMenuHandle(kMenuFont), item, name);
+            GetFNum(name, &font);
+            SetTextFont(font, gTextSize);
+            break;
+
+        case kMenuSize:
+            if (item >= 1 && item <= kSizeCount)
+                SetTextFont(gTextFont, kSizes[item - 1]);
             break;
     }
     HiliteMenu(0);
@@ -1556,6 +1706,7 @@ static void SetUpMenus(void)
 
     SetMenuBar(menuBar);
     AppendResMenu(GetMenuHandle(kMenuApple), 'DRVR');
+    AppendResMenu(GetMenuHandle(kMenuFont), 'FONT');
     DrawMenuBar();
 }
 
@@ -1578,6 +1729,7 @@ int main(void)
 
     SetUpMenus();
     FindEntriesFolder();
+    LoadSettings();
     ScanEntries();
     ShowAllEntries();
     gDay = Today();

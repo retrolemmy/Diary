@@ -56,8 +56,31 @@ resource 'MENU' (131) {
     }
 };
 
+resource 'MENU' (132) {
+    132, textMenuProc;
+    allEnabled, enabled;
+    "Font";
+    {
+        /* filled in with the installed fonts */
+    }
+};
+
+resource 'MENU' (133) {
+    133, textMenuProc;
+    allEnabled, enabled;
+    "Size";
+    {
+        "9 Point", noIcon, noKey, noMark, plain;
+        "10 Point", noIcon, noKey, noMark, plain;
+        "12 Point", noIcon, noKey, noMark, plain;
+        "14 Point", noIcon, noKey, noMark, plain;
+        "18 Point", noIcon, noKey, noMark, plain;
+        "24 Point", noIcon, noKey, noMark, plain;
+    }
+};
+
 resource 'MBAR' (128) {
-    { 128, 129, 130, 131 };
+    { 128, 129, 130, 131, 132, 133 };
 };
 
 /* About box */
@@ -78,7 +101,7 @@ resource 'DITL' (128) {
         Button { enabled, "OK" };
 
         { 15, 62, 33, 300 },
-        StaticText { disabled, "Diary 1.2" };
+        StaticText { disabled, "Diary 1.3" };
 
         { 38, 62, 92, 300 },
         StaticText { disabled, "A simple day-by-day journal for the classic Mac OS. Entries are kept in the \"Diary Entries\" folder." };
@@ -151,7 +174,7 @@ resource 'DITL' (130) {
 type 'DIAR' as 'STR ';
 
 resource 'DIAR' (0, "Owner resource") {
-    "Diary 1.2"
+    "Diary 1.3"
 };
 
 resource 'FREF' (128) {
