@@ -533,13 +533,69 @@ static OSErr WriteEntriesFile(ConstStr255Param name, OSType creator, OSType type
     return err;
 }
 
+/* MacRoman for ISO Latin-1 0xA0..0xFF; '?' where MacRoman has no match. */
+static const unsigned char kLatin1ToMac[96] = {
+    0xCA, 0xC1, 0xA2, 0xA3, 0x3F, 0xB4, 0x3F, 0xA4,  /* A0 */
+    0xAC, 0xA9, 0xBB, 0xC7, 0xC2, 0x2D, 0xA8, 0xF8,  /* A8 */
+    0xA1, 0xB1, 0x32, 0x33, 0xAB, 0xB5, 0xA6, 0xE1,  /* B0 */
+    0xFC, 0x31, 0xBC, 0xC8, 0x3F, 0x3F, 0x3F, 0xC0,  /* B8 */
+    0xCB, 0xE7, 0xE5, 0xCC, 0x80, 0x81, 0xAE, 0x82,  /* C0 */
+    0xE9, 0x83, 0xE6, 0xE8, 0xED, 0xEA, 0xEB, 0xEC,  /* C8 */
+    0x3F, 0x84, 0xF1, 0xEE, 0xEF, 0xCD, 0x85, 0x78,  /* D0 */
+    0xAF, 0xF4, 0xF2, 0xF3, 0x86, 0x3F, 0x3F, 0xA7,  /* D8 */
+    0x88, 0x87, 0x89, 0x8B, 0x8A, 0x8C, 0xBE, 0x8D,  /* E0 */
+    0x8F, 0x8E, 0x90, 0x91, 0x93, 0x92, 0x94, 0x95,  /* E8 */
+    0x3F, 0x96, 0x98, 0x97, 0x99, 0x9B, 0x9A, 0xD6,  /* F0 */
+    0xBF, 0x9D, 0x9C, 0x9E, 0x9F, 0x3F, 0x3F, 0xD8   /* F8 */
+};
+
+/* Entries written by the Amiga version use LF line ends, ISO Latin-1 and a
+   final line end. Text with LF line ends gets CR ones, and unless it holds
+   bytes 0x80..0x9F (which only MacRoman uses) its characters are converted
+   too. The file itself is only rewritten when the entry is edited. */
+static void ConvertForeignText(Handle buf, long *len)
+{
+    unsigned char *p = (unsigned char *)*buf;
+    Boolean hasLF = false, isMacRoman = false;
+    long i, j;
+
+    for (i = 0; i < *len; i++) {
+        if (p[i] == '\n')
+            hasLF = true;
+        else if (p[i] >= 0x80 && p[i] < 0xA0)
+            isMacRoman = true;
+    }
+    if (!hasLF)
+        return;
+
+    for (i = j = 0; i < *len; i++) {
+        unsigned char c = p[i];
+
+        if (c == '\r' && i + 1 < *len && p[i + 1] == '\n')
+            continue;               /* CR LF: the LF becomes the CR */
+        if (c == '\n')
+            c = '\r';
+        else if (c >= 0xA0 && !isMacRoman)
+            c = kLatin1ToMac[c - 0xA0];
+        p[j++] = c;
+    }
+    if (j > 0 && p[j - 1] == '\r')
+        j--;
+    *len = j;
+    SetHandleSize(buf, j);
+}
+
 /* Reads a day's entry into buf (resized to fit). Missing files read as empty. */
 static OSErr ReadEntry(long day, Handle buf, long *len)
 {
     Str255 name;
+    OSErr err;
 
     MakeEntryName(day, name);
-    return ReadEntriesFile(name, buf, len);
+    err = ReadEntriesFile(name, buf, len);
+    if (err == noErr)
+        ConvertForeignText(buf, len);
+    return err;
 }
 
 static void LoadEntry(void)

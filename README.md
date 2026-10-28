@@ -3,7 +3,7 @@
 A simple one-page-per-day journal for the classic Mac OS on 68k Macs
 (System 7; should also run on System 6.0.8 with HFS).
 There's also a [version for AmigaOS 3.2](https://github.com/retrolemmy/Diary-Amiga),
-which can read the entries written here.
+and this version can read the entries written there.
 
 - One window: a month calendar and a list of all entries (newest first) on
   the left, the selected day on the right with `<`, `Today` and `>` buttons
@@ -19,6 +19,9 @@ which can read the entries written here.
 - The current entry is saved automatically when you switch days or quit; ⌘S saves at any time
 - Entries are plain `TEXT` files named `YYYY-MM-DD` in a **Diary Entries** folder
   next to the application, so they open in SimpleText/TeachText too
+- Entries written by the [Amiga version](https://github.com/retrolemmy/Diary-Amiga)
+  can be copied in and read as they are: their line ends and accented
+  letters (ISO Latin-1) are converted
 - Clearing an entry completely deletes its file
 - Up to 32,000 characters per day (the TextEdit limit)
 
@@ -47,6 +50,11 @@ The finished app is in `build/dist/`:
 Use these rather than the files directly in `build/`: Retro68 can't set the
 Finder's "has bundle" flag, so a post-build step (`tools/set_bundle_bit.py`)
 sets it to make the custom icon show up.
+
+For testing in [Basilisk II](https://basilisk.cebix.net), `cmake --build build
+--target emulator` unpacks the app into the folder Basilisk II shares with the
+Mac (`~/BasiliskII/Shared` by default; set `BASILISK_SHARED` to change it),
+with its type, creator and icon intact.
 
 ## Icon
 

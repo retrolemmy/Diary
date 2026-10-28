@@ -35,3 +35,14 @@ add_custom_command(
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     VERBATIM)
 add_custom_target(Diary_dist ALL DEPENDS dist/Diary.bin dist/Diary.dsk)
+
+# cmake --build build --target emulator
+# puts the app into the folder Basilisk II shares with the Mac (ExtFS).
+set(BASILISK_SHARED "$ENV{HOME}/BasiliskII/Shared" CACHE PATH
+    "Folder shared with Basilisk II")
+add_custom_target(emulator
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/macbinary_to_extfs.py
+            dist/Diary.bin ${BASILISK_SHARED}
+    DEPENDS Diary_dist
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+    VERBATIM)
