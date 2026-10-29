@@ -199,9 +199,19 @@ static long DateToDay(long year, short month, short dayOfMonth)
 static long Today(void)
 {
     unsigned long secs;
+    long day, year;
+    short month, dayOfMonth;
 
     GetDateTime(&secs);
-    return secs / kSecondsPerDay;
+    day = secs / kSecondsPerDay;
+
+    /* The Date & Time control panel takes two-digit years and reads them as
+       1920..2019, so a Mac set to 2026 there says 1926. The leap years of
+       1920..1939 and 2020..2039 match, so the date moves over as it is. */
+    DayToDate(day, &year, &month, &dayOfMonth);
+    if (year < 1940)
+        day = DateToDay(year + 100, month, dayOfMonth);
+    return day;
 }
 
 static short Weekday(long day)
