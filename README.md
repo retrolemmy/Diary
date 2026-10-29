@@ -21,8 +21,16 @@ the two can read each other's entries.
   next to the application, so they open in SimpleText/TeachText too
 - Entries written by the [Amiga version](https://github.com/retrolemmy/Diary-Amiga)
   can be copied in and read as they are: their line ends and accented
-  letters (ISO Latin-1) are converted
+  letters (ISO Latin-1) are converted, and they get the Mac file type of
+  a text document
 - Clearing an entry completely deletes its file
+- **File → Diary Server...** keeps the entries on a
+  [Diary Server](https://github.com/retrolemmy/Diary-Server) instead, so all
+  your Macs and Amigas share them. Search then runs on the server, and if an
+  entry was changed on another computer since you opened it, Diary asks
+  before saving over it. It needs MacTCP or Open Transport, and the server's
+  IP address (Diary can't look up server names); without a server set,
+  Diary never touches the network
 - Up to 32,000 characters per day (the TextEdit limit)
 
 ## Building

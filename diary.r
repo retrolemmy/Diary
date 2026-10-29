@@ -20,6 +20,8 @@ resource 'MENU' (129) {
     {
         "Save", noIcon, "S", noMark, plain;
         "-", noIcon, noKey, noMark, plain;
+        "Diary Server...", noIcon, noKey, noMark, plain;
+        "-", noIcon, noKey, noMark, plain;
         "Quit", noIcon, "Q", noMark, plain;
     }
 };
@@ -101,7 +103,7 @@ resource 'DITL' (128) {
         Button { enabled, "OK" };
 
         { 15, 62, 33, 300 },
-        StaticText { disabled, "Diary 1.4" };
+        StaticText { disabled, "Diary 1.5" };
 
         { 38, 62, 92, 300 },
         StaticText { disabled, "A simple day-by-day journal for the classic Mac OS. Entries are kept in the \"Diary Entries\" folder." };
@@ -170,11 +172,76 @@ resource 'DITL' (130) {
     }
 };
 
+/* Diary Server settings */
+resource 'DLOG' (131) {
+    { 0, 0, 176, 360 },
+    dBoxProc,
+    visible,
+    noGoAway,
+    0,
+    131,
+    "",
+    centerMainScreen
+};
+
+resource 'DITL' (131) {
+    {
+        { 144, 270, 164, 340 },
+        Button { enabled, "OK" };
+
+        { 144, 190, 164, 260 },
+        Button { enabled, "Cancel" };
+
+        { 10, 15, 58, 345 },
+        StaticText { disabled, "Keep the entries on a Diary Server at this IP address (like 192.168.1.10 or 192.168.1.10:8642). Leave it empty to use the \"Diary Entries\" folder." };
+
+        { 62, 18, 78, 342 },
+        EditText { enabled, "" };
+
+        { 92, 15, 108, 345 },
+        StaticText { disabled, "Key (leave it empty if the server has none):" };
+
+        { 112, 18, 128, 342 },
+        EditText { enabled, "" };
+
+        { 140, 266, 168, 344 },
+        UserItem { disabled };
+    }
+};
+
+/* A question with two answers; the buttons get their titles at run time. */
+resource 'DLOG' (132) {
+    { 0, 0, 128, 360 },
+    dBoxProc,
+    visible,
+    noGoAway,
+    0,
+    132,
+    "",
+    centerMainScreen
+};
+
+resource 'DITL' (132) {
+    {
+        { 96, 236, 116, 340 },
+        Button { enabled, "OK" };
+
+        { 96, 120, 116, 224 },
+        Button { enabled, "Cancel" };
+
+        { 12, 20, 88, 340 },
+        StaticText { disabled, "^0" };
+
+        { 92, 232, 120, 344 },
+        UserItem { disabled };
+    }
+};
+
 /* Finder bundle: ties the 'DIAR' creator to the application icon. */
 type 'DIAR' as 'STR ';
 
 resource 'DIAR' (0, "Owner resource") {
-    "Diary 1.4"
+    "Diary 1.5"
 };
 
 resource 'FREF' (128) {

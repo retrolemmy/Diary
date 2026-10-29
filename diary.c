@@ -25,6 +25,8 @@
 #include <Sound.h>
 #include <string.h>
 
+#include "net.h"
+
 enum {
     kMenuApple = 128,
     kMenuFile,
@@ -35,16 +37,18 @@ enum {
 };
 
 enum { kItemAbout = 1 };
-enum { kItemSave = 1, kItemQuit = 3 };
+enum { kItemSave = 1, kItemServer = 3, kItemQuit = 5 };
 enum {
     kItemUndo = 1, kItemCut = 3, kItemCopy, kItemPaste, kItemClear,
     kItemSelectAll = 8, kItemFind = 10, kItemFindAgain, kItemShowAll
 };
 enum { kItemPrevDay = 1, kItemNextDay, kItemToday = 4 };
 
-enum { kDlogAbout = 128, kDlogMessage = 129, kDlogFind = 130 };
+enum { kDlogAbout = 128, kDlogMessage = 129, kDlogFind = 130, kDlogServer = 131, kDlogAsk = 132 };
 enum { kAboutRingItem = 4, kMessageRingItem = 3 };
 enum { kFindOK = 1, kFindCancel = 2, kFindTextItem = 4, kFindRingItem = 5 };
+enum { kServerAddressItem = 4, kServerKeyItem = 6, kServerRingItem = 7 };
+enum { kAskFirst = 1, kAskSecond = 2, kAskRingItem = 4 };
 
 /* Control part codes (Inside Macintosh: Toolbox Essentials) */
 enum {
@@ -93,6 +97,12 @@ static Boolean gHaveFolder;
 static Handle gAllDays, gShownDays;
 static short gAllCount, gShownCount;
 static Str255 gSearch;
+
+/* With a Diary Server set, entries live there instead of in the folder. */
+static char gServer[64];                /* "a.b.c.d" or "a.b.c.d:port", "" = local */
+static char gServerKey[64];
+static Boolean gUseServer;              /* false also after "Work Locally" */
+static char gEntryVersion[16];          /* server version of the open entry */
 
 /* Font and size of the entry text, remembered in the settings file. */
 static short gTextFont = applFont;
@@ -386,6 +396,78 @@ static void ShowAbout(void)
     DisposeDialog(dlg);
 }
 
+/* Asks a question with two answers; returns 1 for the first (default)
+   button and 2 for the second. */
+static short Ask(const char *message, const char *first, const char *second)
+{
+    Str255 msg, title, empty;
+    short item, type;
+    Handle h;
+    Rect r;
+    DialogPtr dlg;
+
+    PSet(msg, message);
+    empty[0] = 0;
+    ParamText(msg, empty, empty, empty);
+    dlg = GetNewDialog(kDlogAsk, NULL, (WindowPtr)-1);
+    if (dlg == NULL)
+        return kAskSecond;
+    GetDialogItem(dlg, kAskFirst, &type, &h, &r);
+    PSet(title, first);
+    SetControlTitle((ControlHandle)h, title);
+    GetDialogItem(dlg, kAskSecond, &type, &h, &r);
+    PSet(title, second);
+    SetControlTitle((ControlHandle)h, title);
+    InstallDefaultRing(dlg, kAskRingItem);
+    do {
+        ModalDialog(NULL, &item);
+    } while (item != kAskFirst && item != kAskSecond);
+    DisposeDialog(dlg);
+    return item;
+}
+
+/* Shows a server problem: what failed, then why. */
+static void ShowServerError(const char *what, const char *why)
+{
+    char message[256];
+
+    strcpy(message, what);
+    strcat(message, " ");
+    strncat(message, why, sizeof(message) - strlen(message) - 1);
+    ShowMessage(message, noErr, true);
+}
+
+static void PToC(ConstStr255Param p, char *c, short size)
+{
+    short n = p[0] < size - 1 ? p[0] : size - 1;
+
+    BlockMove(p + 1, c, n);
+    c[n] = 0;
+}
+
+static void SetBusy(Boolean busy)
+{
+    if (busy)
+        SetCursor(*GetCursor(watchCursor));
+    else
+        SetCursor(&qd.arrow);
+}
+
+static void UpdateTitle(void)
+{
+    char title[100];
+    Str255 t;
+
+    strcpy(title, "Diary");
+    if (gUseServer) {
+        strcat(title, " - ");
+        strcat(title, gServer);
+    }
+    PSet(t, title);
+    if (gWindow != NULL)
+        SetWTitle(gWindow, t);
+}
+
 static Boolean AskForSearchText(Str255 text)
 {
     short item, type;
@@ -455,7 +537,7 @@ static void FindEntriesFolder(void)
 }
 
 /* Fills gAllDays with every YYYY-MM-DD file in the entries folder. */
-static void ScanEntries(void)
+static void ScanLocalEntries(void)
 {
     CInfoPBRec cat;
     Str255 name;
@@ -475,9 +557,79 @@ static void ScanEntries(void)
             break;
         if (cat.hFileInfo.ioFlAttrib & 0x10)
             continue;
-        if (ParseEntryName(name, &day))
-            InsertDay(gAllDays, &gAllCount, day);
+        if (!ParseEntryName(name, &day))
+            continue;
+        InsertDay(gAllDays, &gAllCount, day);
+
+        /* Entries copied from the Amiga have no Mac file type; make them
+           TEXT files like Diary's own so the Finder shows them as text. */
+        if (cat.hFileInfo.ioFlFndrInfo.fdType != 'TEXT') {
+            cat.hFileInfo.ioFlFndrInfo.fdType = 'TEXT';
+            cat.hFileInfo.ioFlFndrInfo.fdCreator = 'ttxt';
+            cat.hFileInfo.ioDirID = gEntriesDirID;   /* GetCatInfo put the file number here */
+            PBSetCatInfoSync(&cat);
+        }
     }
+}
+
+/* Adds the days of a server reply ("YYYY-MM-DD ..." lines) to a day list. */
+static void AddDaysFromReply(Handle days, short *count, const char *reply)
+{
+    while (*reply != 0) {
+        Str255 name;
+        long day;
+
+        name[0] = 10;
+        BlockMove(reply, name + 1, 10);
+        if (strlen(reply) >= 10 && ParseEntryName(name, &day))
+            InsertDay(days, count, day);
+        reply = strchr(reply, '\n');
+        if (reply == NULL)
+            break;
+        reply++;
+    }
+}
+
+static Boolean ScanServerEntries(char *error, long errorSize)
+{
+    HttpResponse response;
+
+    if (!HttpRequest("GET", "/entries", NULL, 0, NULL, &response, error, errorSize))
+        return false;
+    if (response.status != 200) {
+        strcpy(error, response.status == 403 ? "The server wants a different key."
+                                             : "The server refused the entry list.");
+        HttpFree(&response);
+        return false;
+    }
+    AddDaysFromReply(gAllDays, &gAllCount, response.body);
+    HttpFree(&response);
+    return true;
+}
+
+/* Reads the list of entries, from the server if one is set. If it can't be
+   reached, Diary can work with the local folder for this session. */
+static void ScanEntries(void)
+{
+    gAllCount = 0;
+    while (gUseServer) {
+        char error[200], message[256];
+        Boolean ok;
+
+        SetBusy(true);
+        ok = ScanServerEntries(error, sizeof(error));
+        SetBusy(false);
+        if (ok)
+            return;
+        gAllCount = 0;
+        strcpy(message, "Diary couldn't get the entries from the Diary Server: ");
+        strcat(message, error);
+        if (Ask(message, "Retry", "Work Locally") == kAskSecond) {
+            gUseServer = false;     /* for this session; the setting stays */
+            UpdateTitle();
+        }
+    }
+    ScanLocalEntries();
 }
 
 /* Reads a file in the entries folder into buf (resized to fit, at most
@@ -598,13 +750,53 @@ static OSErr ReadEntry(long day, Handle buf, long *len)
     return err;
 }
 
+/* Fetches the day's entry from the server into h; empty if there's none. */
+static void ReadServerEntry(long day, Handle h, long *len)
+{
+    char path[32], error[200];
+    Str255 name;
+    HttpResponse response;
+    Boolean ok;
+
+    *len = 0;
+    strcpy(gEntryVersion, "none");
+    MakeEntryName(day, name);
+    strcpy(path, "/entries/");
+    PToC(name, path + strlen(path), 12);
+    SetBusy(true);
+    ok = HttpRequest("GET", path, NULL, 0, NULL, &response, error, sizeof(error));
+    SetBusy(false);
+    if (!ok) {
+        ShowServerError("Diary couldn't load the entry from the Diary Server:", error);
+        return;
+    }
+    if (response.status == 200) {
+        long n = response.length > kMaxTextLength ? kMaxTextLength : response.length;
+
+        strcpy(gEntryVersion, response.version);
+        SetHandleSize(h, n);
+        if (MemError() == noErr) {
+            BlockMove(response.body, *h, n);
+            *len = n;
+        }
+    } else if (response.status != 404) {
+        ShowServerError("Diary couldn't load the entry from the Diary Server:",
+                        response.status == 403 ? "The server wants a different key." : response.body);
+    }
+    HttpFree(&response);
+}
+
 static void LoadEntry(void)
 {
     Handle h = NewHandle(0);
     long len = 0;
 
-    if (h != NULL)
-        ReadEntry(gDay, h, &len);
+    if (h != NULL) {
+        if (gUseServer)
+            ReadServerEntry(gDay, h, &len);
+        else
+            ReadEntry(gDay, h, &len);
+    }
 
     TESetSelect(0, 32767, gTE);
     TEDelete(gTE);
@@ -624,6 +816,52 @@ static void LoadEntry(void)
     SyncListSelection();
 }
 
+/* Saves (or, if count is 0, deletes) the open entry on the server. If it
+   was changed on another computer since it was loaded, asks first. */
+static Boolean SaveServerEntry(Handle text, long count)
+{
+    char path[32], error[200];
+    Str255 name;
+    const char *base = gEntryVersion;
+
+    MakeEntryName(gDay, name);
+    strcpy(path, "/entries/");
+    PToC(name, path + strlen(path), 12);
+    for (;;) {
+        HttpResponse response;
+        Boolean ok;
+        long status;
+
+        SetBusy(true);
+        HLock(text);
+        ok = HttpRequest("PUT", path, *text, count, base, &response, error, sizeof(error));
+        HUnlock(text);
+        SetBusy(false);
+        if (!ok) {
+            ShowServerError("Diary couldn't save the entry on the Diary Server; "
+                            "your text is still in the window.", error);
+            return false;
+        }
+        status = response.status;
+        if (status == 200)
+            strcpy(gEntryVersion, response.version);
+        else if (status != 409)
+            ShowServerError("The Diary Server refused to save the entry; "
+                            "your text is still in the window.",
+                            status == 403 ? "The server wants a different key." : response.body);
+        HttpFree(&response);
+
+        if (status == 200)
+            return true;
+        if (status != 409)
+            return false;
+        if (Ask("This entry was changed on another computer since you opened it. "
+                "Save your version over it?", "Overwrite", "Keep Editing") == kAskSecond)
+            return false;
+        base = NULL;                /* replace it unconditionally */
+    }
+}
+
 static Boolean SaveEntry(void)
 {
     Str255 name;
@@ -633,6 +871,23 @@ static Boolean SaveEntry(void)
 
     if (!gDirty)
         return true;
+    if (gUseServer) {
+        count = (**gTE).teLength;
+        if (!SaveServerEntry((Handle)TEGetText(gTE), count))
+            return false;
+        gDirty = false;
+        if (count == 0) {
+            RemoveDay(gAllDays, &gAllCount, gDay);
+            RemoveDay(gShownDays, &gShownCount, gDay);
+            RefreshList();
+        } else if (FindDay(gAllDays, gAllCount, gDay) < 0) {
+            InsertDay(gAllDays, &gAllCount, gDay);
+            if (gSearch[0] == 0)
+                InsertDay(gShownDays, &gShownCount, gDay);
+            RefreshList();
+        }
+        return true;
+    }
     if (!gHaveFolder) {
         ShowError("There is no \"Diary Entries\" folder to save into.", noErr);
         return false;
@@ -712,6 +967,10 @@ static Boolean EntryContains(long day, Handle buf)
 {
     long len;
 
+    /* With a server, the listed days are its search result. */
+    if (gUseServer)
+        return FindDay(gShownDays, gShownCount, day) >= 0;
+
     if (ReadEntry(day, buf, &len) != noErr)
         return false;
     return FindText(*buf, len, 0, gSearch) >= 0;
@@ -766,10 +1025,33 @@ static void DoFind(void)
     SetCursor(*GetCursor(watchCursor));
     BlockMove(gSearch, previous, gSearch[0] + 1);
     BlockMove(text, gSearch, text[0] + 1);
-    for (i = 0; i < gAllCount; i++) {
-        long day = Days(gAllDays)[i];
-        if (EntryContains(day, buf))
-            InsertDay(matches, &matchCount, day);
+    if (gUseServer) {
+        char words[256], path[3 * 255 + 16], error[200];
+        HttpResponse response;
+        Boolean ok;
+
+        PToC(text, words, sizeof(words));
+        strcpy(path, "/search?q=");
+        NetEncode(words, path + strlen(path), sizeof(path) - strlen(path));
+        ok = HttpRequest("GET", path, NULL, 0, NULL, &response, error, sizeof(error));
+        SetCursor(&qd.arrow);
+        if (!ok || response.status != 200) {
+            BlockMove(previous, gSearch, previous[0] + 1);
+            ShowServerError("Diary couldn't search on the Diary Server:",
+                            !ok ? error : response.status == 403 ? "The server wants a different key."
+                                                                 : response.body);
+            if (ok)
+                HttpFree(&response);
+            goto done;
+        }
+        AddDaysFromReply(matches, &matchCount, response.body);
+        HttpFree(&response);
+    } else {
+        for (i = 0; i < gAllCount; i++) {
+            long day = Days(gAllDays)[i];
+            if (EntryContains(day, buf))
+                InsertDay(matches, &matchCount, day);
+        }
     }
     SetCursor(&qd.arrow);
 
@@ -1180,12 +1462,22 @@ static void LoadSettings(void)
         p = (unsigned char *)*buf;
         size = (p[0] << 8) | p[1];
         if (len >= 3 + p[2] && size >= 6 && size <= 127) {
+            long at = 3 + p[2];
+
             BlockMove(p + 2, name, p[2] + 1);
             GetFNum(name, &font);
             GetFontName(font, actual);
             if (PEqual(name, actual))       /* the font is still installed */
                 gTextFont = font;
             gTextSize = size;
+
+            /* Since 1.5: server address and key, as Pascal strings */
+            if (len >= at + 1 + p[at]) {
+                PToC(p + at, gServer, sizeof(gServer));
+                at += 1 + p[at];
+                if (len >= at + 1 + p[at])
+                    PToC(p + at, gServerKey, sizeof(gServerKey));
+            }
         }
     }
     DisposeHandle(buf);
@@ -1193,8 +1485,9 @@ static void LoadSettings(void)
 
 static void SaveSettings(void)
 {
-    unsigned char data[2 + 256];
+    unsigned char data[2 + 256 + 64 + 64];
     Str255 name, fontName;
+    long len;
 
     if (!gHaveFolder)
         return;
@@ -1202,8 +1495,15 @@ static void SaveSettings(void)
     data[0] = gTextSize >> 8;
     data[1] = gTextSize & 0xFF;
     BlockMove(fontName, data + 2, fontName[0] + 1);
+    len = 3 + fontName[0];
+    data[len] = strlen(gServer);
+    BlockMove(gServer, data + len + 1, data[len]);
+    len += 1 + data[len];
+    data[len] = strlen(gServerKey);
+    BlockMove(gServerKey, data + len + 1, data[len]);
+    len += 1 + data[len];
     PSet(name, "Diary Settings");
-    WriteEntriesFile(name, 'DIAR', 'pref', (Ptr)data, 3 + fontName[0]);
+    WriteEntriesFile(name, 'DIAR', 'pref', (Ptr)data, len);
 }
 
 /* Sets the entry text's font and size, and the line metrics that go
@@ -1597,6 +1897,49 @@ static void AdjustMenus(void)
     MarkFontMenus();
 }
 
+/* File > Diary Server...: where the entries are kept. */
+static void ChooseServer(void)
+{
+    short item, type;
+    Handle address, key;
+    Rect r;
+    Str255 text;
+    char server[sizeof(gServer)], serverKey[sizeof(gServerKey)];
+    DialogPtr dlg = GetNewDialog(kDlogServer, NULL, (WindowPtr)-1);
+
+    if (dlg == NULL)
+        return;
+    InstallDefaultRing(dlg, kServerRingItem);
+    GetDialogItem(dlg, kServerAddressItem, &type, &address, &r);
+    PSet(text, gServer);
+    SetDialogItemText(address, text);
+    GetDialogItem(dlg, kServerKeyItem, &type, &key, &r);
+    PSet(text, gServerKey);
+    SetDialogItemText(key, text);
+    SelectDialogItemText(dlg, kServerAddressItem, 0, 32767);
+    do {
+        ModalDialog(NULL, &item);
+    } while (item != kFindOK && item != kFindCancel);
+    GetDialogItemText(address, text);
+    PToC(text, server, sizeof(server));
+    GetDialogItemText(key, text);
+    PToC(text, serverKey, sizeof(serverKey));
+    DisposeDialog(dlg);
+    if (item != kFindOK || !SaveEntry())
+        return;
+
+    strcpy(gServer, server);
+    strcpy(gServerKey, server[0] != 0 ? serverKey : "");
+    gUseServer = gServer[0] != 0;
+    NetSetServer(gServer, gServerKey);
+    SaveSettings();
+    UpdateTitle();
+
+    ScanEntries();
+    ShowAllEntries();
+    LoadEntry();
+}
+
 static void DoQuit(void)
 {
     if (SaveEntry())
@@ -1623,6 +1966,8 @@ static void DoMenuCommand(long command)
         case kMenuFile:
             if (item == kItemSave)
                 SaveEntry();
+            else if (item == kItemServer)
+                ChooseServer();
             else if (item == kItemQuit)
                 DoQuit();
             break;
@@ -1786,10 +2131,13 @@ int main(void)
     SetUpMenus();
     FindEntriesFolder();
     LoadSettings();
+    gUseServer = gServer[0] != 0;
+    NetSetServer(gServer, gServerKey);
     ScanEntries();
     ShowAllEntries();
     gDay = Today();
     CreateWindow();
+    UpdateTitle();
     LoadEntry();
 
     while (!gQuit) {
