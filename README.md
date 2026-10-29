@@ -1,7 +1,9 @@
 # Diary
 
 A simple one-page-per-day journal for the classic Mac OS on 68k Macs
-(System 7; should also run on System 6.0.8 with HFS).
+(System 7; should also run on System 6.0.8 with HFS). It also runs on
+PowerPC Macs, through Mac OS's built-in 68k emulator: tested on a Power Mac
+G4 with Mac OS 9.2.2, including the Diary Server connection.
 There's also a [version for AmigaOS 3.2](https://github.com/retrolemmy/Diary-Amiga)
 (the two can read each other's entries), and ones for
 [Mac OS X 10.4 and 10.5](https://github.com/retrolemmy/Diary-MacOSX) and
