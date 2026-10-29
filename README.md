@@ -2,8 +2,9 @@
 
 A simple one-page-per-day journal for the classic Mac OS on 68k Macs
 (System 7; should also run on System 6.0.8 with HFS).
-There's also a [version for AmigaOS 3.2](https://github.com/retrolemmy/Diary-Amiga);
-the two can read each other's entries.
+There's also a [version for AmigaOS 3.2](https://github.com/retrolemmy/Diary-Amiga)
+(the two can read each other's entries) and one for
+[Mac OS X 10.4 and 10.5](https://github.com/retrolemmy/Diary-MacOSX).
 
 - One window: a month calendar and a list of all entries (newest first) on
   the left, the selected day on the right with `<`, `Today` and `>` buttons
