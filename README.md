@@ -35,6 +35,16 @@ There's also a [version for AmigaOS 3.2](https://github.com/retrolemmy/Diary-Ami
   Diary never touches the network
 - Up to 32,000 characters per day (the TextEdit limit)
 
+## Diary Server
+
+To share the entries between your computers, run
+[Diary Server](https://github.com/retrolemmy/Diary-Server) on a machine in
+your network, such as a RetroNAS or any small Linux box with Python 3.9 or
+later: download `diary_server.py` from its
+[latest release](https://github.com/retrolemmy/Diary-Server/releases/latest)
+and start it as its README describes. Diary works with Diary Server 1.0 or
+later. The same server also gives modern browsers a Diary web page.
+
 ## Building
 
 You need the [Retro68](https://github.com/autc04/Retro68) cross-compiler:
