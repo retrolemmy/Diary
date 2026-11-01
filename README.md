@@ -5,8 +5,9 @@ A simple one-page-per-day journal for the classic Mac OS on 68k Macs
 PowerPC Macs, through Mac OS's built-in 68k emulator: tested on a Power Mac
 G4 with Mac OS 9.2.2, including the Diary Server connection.
 There's also a [version for AmigaOS 3.2](https://github.com/retrolemmy/Diary-Amiga)
-(the two can read each other's entries), and ones for
-[MorphOS and AmigaOS with MUI](https://github.com/retrolemmy/Diary-Amiga-MUI),
+(tested on an A4000; the two can read each other's entries), and ones for
+[MorphOS and AmigaOS with MUI](https://github.com/retrolemmy/Diary-Amiga-MUI)
+(tested on a Mac mini G4 and the A4000),
 [Mac OS X 10.4 and 10.5](https://github.com/retrolemmy/Diary-MacOSX) and
 [Windows 98](https://github.com/retrolemmy/Diary-Win98).
 
