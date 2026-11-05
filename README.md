@@ -8,8 +8,9 @@ There's also a [version for AmigaOS 3.2](https://github.com/retrolemmy/Diary-Ami
 (tested on an A4000; the two can read each other's entries), and ones for
 [MorphOS and AmigaOS with MUI](https://github.com/retrolemmy/Diary-Amiga-MUI)
 (tested on a Mac mini G4 and the A4000),
-[Mac OS X 10.4 and 10.5](https://github.com/retrolemmy/Diary-MacOSX) and
-[Windows 98](https://github.com/retrolemmy/Diary-Win98).
+[Mac OS X 10.4 and 10.5](https://github.com/retrolemmy/Diary-MacOSX),
+[Windows 98](https://github.com/retrolemmy/Diary-Win98) and
+[Linux with GTK 3](https://github.com/retrolemmy/Diary-Linux) (tested on a Power Mac G5).
 
 - One window: a month calendar and a list of all entries (newest first) on
   the left, the selected day on the right with `<`, `Today` and `>` buttons
@@ -104,6 +105,8 @@ also gives modern browsers a Diary web page:
   PowerPC and Intel Macs (tested on Leopard)
 - [Windows 98](https://github.com/retrolemmy/Diary-Win98) (tested on Windows 98
   and Windows 11)
+- [Linux with GTK 3](https://github.com/retrolemmy/Diary-Linux) (tested on a
+  Power Mac G5 with Gentoo Linux)
 - Modern browsers on computers, tablets and phones: the Diary Server's web page
   (tested in Chrome and Firefox)
 - [Diary Server](https://github.com/retrolemmy/Diary-Server) (tested on a
